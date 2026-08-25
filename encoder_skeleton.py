@@ -18,8 +18,10 @@ import sys
 SOPORTADAS = ["add", "sub", "and", "or", "addi", "andi",
               "lw", "lb", "sw", "sb", "beq", "bne"]
 
-# Opcode OP (register-register) — RISC-V ISA Vol. I, formato R
-OPCODE_OP = 0b0110011
+# Opcodes — RISC-V ISA Vol. I
+OPCODE_OP = 0b0110011      # R: ALU registro-registro
+OPCODE_OP_IMM = 0b0010011  # I: ALU con inmediato
+OPCODE_LOAD = 0b0000011    # I: carga desde memoria
 
 # mnemonic -> (funct3, funct7)
 R_TYPE = {
@@ -29,7 +31,19 @@ R_TYPE = {
     "or":  (0b110, 0b0000000),
 }
 
-PENDIENTES = {"addi", "andi", "lw", "lb", "sw", "sb", "beq", "bne"}
+# mnemonic -> funct3  (opcode OP-IMM)
+I_TYPE_ARITH = {
+    "addi": 0b000,
+    "andi": 0b111,
+}
+
+# mnemonic -> funct3  (opcode LOAD)
+I_TYPE_LOAD = {
+    "lw": 0b010,
+    "lb": 0b000,
+}
+
+PENDIENTES = {"sw", "sb", "beq", "bne"}
 
 
 def parse_register(token: str) -> int:
@@ -39,6 +53,23 @@ def parse_register(token: str) -> int:
     if not match:
         raise ValueError(f"Registro inválido: '{token}' (se espera x0–x31)")
     return int(match.group(1))
+
+
+def parse_imm12(token: str) -> int:
+    """Parsea un inmediato con signo de 12 bits (-2048 … 2047)."""
+    token = token.strip()
+    try:
+        # int() acepta decimal y 0x…; los vectores usan decimal (pos/neg)
+        value = int(token, 0)
+    except ValueError as exc:
+        raise ValueError(
+            f"Inmediato inválido: '{token}' (se espera entero con signo)"
+        ) from exc
+    if value < -2048 or value > 2047:
+        raise ValueError(
+            f"Inmediato fuera de rango de 12 bits: {value} (válido: -2048…2047)"
+        )
+    return value
 
 
 def parse_r_operands(rest: str) -> tuple[int, int, int]:
@@ -52,6 +83,43 @@ def parse_r_operands(rest: str) -> tuple[int, int, int]:
     rs1 = parse_register(parts[1])
     rs2 = parse_register(parts[2])
     return rd, rs1, rs2
+
+
+def parse_i_arith_operands(rest: str) -> tuple[int, int, int]:
+    """Parsea 'rd, rs1, imm' para addi/andi."""
+    parts = [p.strip() for p in rest.split(",")]
+    if len(parts) != 3:
+        raise ValueError(
+            f"Formato I aritmético espera 3 operandos (rd, rs1, imm); "
+            f"se recibieron {len(parts)}"
+        )
+    rd = parse_register(parts[0])
+    rs1 = parse_register(parts[1])
+    imm = parse_imm12(parts[2])
+    return rd, rs1, imm
+
+
+def parse_i_load_operands(rest: str) -> tuple[int, int, int]:
+    """Parsea 'rd, imm(rs1)' para lw/lb (p. ej. 'x5, 8(x6)' o 'x5, -4(x2)')."""
+    parts = [p.strip() for p in rest.split(",")]
+    if len(parts) != 2:
+        raise ValueError(
+            f"Formato I load espera 2 operandos (rd, imm(rs1)); "
+            f"se recibieron {len(parts)}"
+        )
+    rd = parse_register(parts[0])
+    match = re.fullmatch(
+        r"(-?(?:0x[0-9a-fA-F]+|\d+))\(\s*(x(?:[0-9]|[12][0-9]|3[01]))\s*\)",
+        parts[1],
+    )
+    if not match:
+        raise ValueError(
+            f"Operando de load inválido: '{parts[1]}' "
+            f"(se espera imm(rs1), p. ej. 8(x6) o -4(x2))"
+        )
+    imm = parse_imm12(match.group(1))
+    rs1 = parse_register(match.group(2))
+    return rd, rs1, imm
 
 
 def split_mnemonic(instruction: str) -> tuple[str, str]:
@@ -76,6 +144,17 @@ def pack_r(funct7: int, rs2: int, rs1: int, funct3: int, rd: int, opcode: int) -
     )
 
 
+def pack_i(imm: int, rs1: int, funct3: int, rd: int, opcode: int) -> int:
+    """Formato I: imm[11:0] | rs1 | funct3 | rd | opcode."""
+    return (
+        ((imm & 0xFFF) << 20)
+        | ((rs1 & 0x1F) << 15)
+        | ((funct3 & 0x7) << 12)
+        | ((rd & 0x1F) << 7)
+        | (opcode & 0x7F)
+    )
+
+
 def encode_instruction(instruction: str) -> int:
     """
     Recibe una instrucción como texto, p. ej. "add x5, x6, x7", y debe
@@ -93,10 +172,20 @@ def encode_instruction(instruction: str) -> int:
         rd, rs1, rs2 = parse_r_operands(rest)
         return pack_r(funct7, rs2, rs1, funct3, rd, OPCODE_OP)
 
+    if mnemonic in I_TYPE_ARITH:
+        funct3 = I_TYPE_ARITH[mnemonic]
+        rd, rs1, imm = parse_i_arith_operands(rest)
+        return pack_i(imm, rs1, funct3, rd, OPCODE_OP_IMM)
+
+    if mnemonic in I_TYPE_LOAD:
+        funct3 = I_TYPE_LOAD[mnemonic]
+        rd, rs1, imm = parse_i_load_operands(rest)
+        return pack_i(imm, rs1, funct3, rd, OPCODE_LOAD)
+
     if mnemonic in PENDIENTES:
         raise NotImplementedError(
             f"'{mnemonic}' pertenece al subconjunto soportado pero aún no "
-            f"está implementada (fase actual: solo formato R)."
+            f"está implementada (fase actual: formatos R e I)."
         )
 
     raise ValueError(
@@ -113,27 +202,17 @@ def _field_row(name: str, hi: int, lo: int, value: int, role: str) -> str:
     width = hi - lo + 1
     return (
         f"  {name:8s} bits [{hi:2d}:{lo:2d}]  "
-        f"bin={_bits(value, width)}  dec={value:<3d}  | {role}"
+        f"bin={_bits(value, width)}  dec={value:<5d}  | {role}"
     )
 
 
-def explain_instruction(instruction: str, word: int) -> str:
-    """
-    Debe retornar un texto (para imprimirse en pantalla) que muestre, de
-    forma visual, los 32 bits de 'word' divididos en los campos del
-    formato correspondiente (R, I, S o B) — indicando el rango de bits y
-    el valor de cada campo — junto con una breve explicación de cada uno.
-    El formato visual (colores, tabla, arte ASCII, etc.) queda a su
-    criterio, siempre que sea claro.
-    """
-    mnemonic, _ = split_mnemonic(instruction)
-    word &= 0xFFFFFFFF
+def _imm12_signed(raw12: int) -> int:
+    """Interpreta imm[11:0] como entero con signo."""
+    raw12 &= 0xFFF
+    return raw12 - 0x1000 if raw12 & 0x800 else raw12
 
-    if mnemonic not in R_TYPE:
-        raise NotImplementedError(
-            f"explain_instruction: formato de '{mnemonic}' aún no implementado"
-        )
 
+def _explain_r(instruction: str, mnemonic: str, word: int) -> str:
     opcode = word & 0x7F
     rd = (word >> 7) & 0x1F
     funct3 = (word >> 12) & 0x7
@@ -142,13 +221,17 @@ def explain_instruction(instruction: str, word: int) -> str:
     funct7 = (word >> 25) & 0x7F
 
     binary = format(word, "032b")
-    # Visual: funct7 | rs2 | rs1 | funct3 | rd | opcode
     visual = (
         f"{binary[0:7]}|{binary[7:12]}|{binary[12:17]}|"
         f"{binary[17:20]}|{binary[20:25]}|{binary[25:32]}"
     )
-
-    lines = [
+    ops = {
+        "add": f"x{rd} ← x{rs1} + x{rs2}",
+        "sub": f"x{rd} ← x{rs1} - x{rs2}",
+        "and": f"x{rd} ← x{rs1} AND x{rs2}",
+        "or":  f"x{rd} ← x{rs1} OR  x{rs2}",
+    }
+    return "\n".join([
         f"Instrucción: {instruction.strip()}",
         f"Formato:     R",
         f"Codificación: 0x{word:08x}",
@@ -170,19 +253,75 @@ def explain_instruction(instruction: str, word: int) -> str:
         _field_row("opcode", 6, 0, opcode,
                    "OP = 0110011: ALU registro-registro"),
         "",
-        f"Semántica: x{rd} = x{rs1} {mnemonic} x{rs2}"
-        if mnemonic in ("add", "sub", "and", "or")
-        else "",
-    ]
-    # Clarificar semántica por mnemónico
-    ops = {
-        "add": f"x{rd} ← x{rs1} + x{rs2}",
-        "sub": f"x{rd} ← x{rs1} - x{rs2}",
-        "and": f"x{rd} ← x{rs1} AND x{rs2}",
-        "or":  f"x{rd} ← x{rs1} OR  x{rs2}",
-    }
-    lines[-1] = f"Semántica: {ops[mnemonic]}"
-    return "\n".join(lines)
+        f"Semántica: {ops[mnemonic]}",
+    ])
+
+
+def _explain_i(instruction: str, mnemonic: str, word: int) -> str:
+    opcode = word & 0x7F
+    rd = (word >> 7) & 0x1F
+    funct3 = (word >> 12) & 0x7
+    rs1 = (word >> 15) & 0x1F
+    imm_raw = (word >> 20) & 0xFFF
+    imm = _imm12_signed(imm_raw)
+
+    binary = format(word, "032b")
+    visual = f"{binary[0:12]}|{binary[12:17]}|{binary[17:20]}|{binary[20:25]}|{binary[25:32]}"
+
+    if mnemonic in I_TYPE_ARITH:
+        opcode_role = "OP-IMM = 0010011: ALU con inmediato"
+        if mnemonic == "addi":
+            semantics = f"x{rd} ← x{rs1} + {imm}"
+        else:
+            semantics = f"x{rd} ← x{rs1} AND {imm}"
+    else:
+        opcode_role = "LOAD = 0000011: carga desde memoria"
+        width = "palabra (32 bits)" if mnemonic == "lw" else "byte (8 bits, sign-extend)"
+        semantics = f"x{rd} ← mem[x{rs1} + {imm}]  ({width})"
+
+    return "\n".join([
+        f"Instrucción: {instruction.strip()}",
+        f"Formato:     I",
+        f"Codificación: 0x{word:08x}",
+        f"Binario 32:   {binary}",
+        f"Campos:       {visual}",
+        f"              imm[11:0] | rs1 | f3 |  rd | opcode",
+        "",
+        "Desglose de campos:",
+        _field_row("imm", 31, 20, imm_raw,
+                   f"inmediato de 12 bits con signo (valor = {imm})"),
+        _field_row("rs1", 19, 15, rs1,
+                   f"registro base / fuente (x{rs1})"),
+        _field_row("funct3", 14, 12, funct3,
+                   f"selecciona la operación ({mnemonic})"),
+        _field_row("rd", 11, 7, rd,
+                   f"registro destino (x{rd})"),
+        _field_row("opcode", 6, 0, opcode, opcode_role),
+        "",
+        f"Semántica: {semantics}",
+    ])
+
+
+def explain_instruction(instruction: str, word: int) -> str:
+    """
+    Debe retornar un texto (para imprimirse en pantalla) que muestre, de
+    forma visual, los 32 bits de 'word' divididos en los campos del
+    formato correspondiente (R, I, S o B) — indicando el rango de bits y
+    el valor de cada campo — junto con una breve explicación de cada uno.
+    El formato visual (colores, tabla, arte ASCII, etc.) queda a su
+    criterio, siempre que sea claro.
+    """
+    mnemonic, _ = split_mnemonic(instruction)
+    word &= 0xFFFFFFFF
+
+    if mnemonic in R_TYPE:
+        return _explain_r(instruction, mnemonic, word)
+    if mnemonic in I_TYPE_ARITH or mnemonic in I_TYPE_LOAD:
+        return _explain_i(instruction, mnemonic, word)
+
+    raise NotImplementedError(
+        f"explain_instruction: formato de '{mnemonic}' aún no implementado"
+    )
 
 
 def main():

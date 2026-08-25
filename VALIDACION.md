@@ -6,20 +6,28 @@
 
 Entregable §3.5 (punto 2): comparación del codificador contra el toolchain RISC-V 32-bit.
 
-> **Estado:** documentados los **12 casos** del formato R (4 instrucciones × 3 escenarios).  
-> Al completar I, S y B se ampliará a los **36 casos** exigidos (12 × 3).
+> **Estado:** documentados y ejercitados **36 casos** en [`casos_prueba.txt`](casos_prueba.txt) (12 × 3).  
+> Codificador: **24/36** coinciden con el toolchain (R e I). S y B pendientes de implementación.  
+> Script: [`validate.sh`](validate.sh) — `./validate.sh` o `./validate.sh --markdown`.
 
 ## Toolchain y procedimiento
 
-- Prefijo: `/opt/riscv`
+- Prefijo típico: `/opt/riscv` (o binarios `riscv64-unknown-elf-*` en `PATH`)
 - Ensamblador / desensamblador: `riscv64-unknown-elf-as`, `riscv64-unknown-elf-objdump`
 - Flags: `-march=rv32i -mabi=ilp32`
-- Por cada caso:
-  1. `./run.sh "<instruccion>"` → línea `HEX: 0x...`
-  2. Ensamblar la misma instrucción y obtener el encoding con `objdump -d`
-  3. Comparar con el valor esperado en [`vectores_ejemplo.txt`](vectores_ejemplo.txt)
+- Automatizado:
 
-Los valores concretos de registros e inmediatos en la verificación automática del profesor pueden diferir; la herramienta debe generalizar a cualquier instrucción válida del subconjunto soportado.
+```bash
+./validate.sh casos_prueba.txt --markdown
+```
+
+Por cada caso el script:
+1. Ejecuta `./run.sh "<instruccion>"` y lee `HEX: 0x...`
+2. Ensambla la misma instrucción con el toolchain
+3. Extrae el encoding con `objdump -d`
+4. Compara modelo vs objdump
+
+Los valores en la verificación automática del profesor pueden diferir; la herramienta debe generalizar al subconjunto soportado.
 
 ---
 
@@ -40,14 +48,34 @@ Los valores concretos de registros e inmediatos en la verificación automática 
 | or x19, x1, x23 | 0x0170e9b3 | 0x0170e9b3 | sí |
 | or x23, x29, x27 | 0x01beebb3 | 0x01beebb3 | sí |
 
-**Resultado parcial:** 12/12 coinciden con el kit y con el toolchain oficial.  
-Escenarios cubiertos en R: distintos registros y uso de `x0` (en R no hay inmediatos negativos).
+**Resultado R:** 12/12. Escenarios: distintos registros y uso de `x0`.
 
-### Pendiente
+---
 
-| Formato | Instrucciones | Casos |
-|---------|---------------|-------|
-| I | addi, andi, lw, lb | 12 |
-| S | sw, sb | 6 |
-| B | beq, bne | 6 |
+## Formato I — 12 casos (3 por instrucción)
+
+| Instrucción | HEX modelo | HEX objdump | ¿Coincide? |
+|-------------|------------|-------------|------------|
+| addi x5, x25, 2035 | 0x7f3c8293 | 0x7f3c8293 | sí |
+| addi x7, x27, 1974 | 0x7b6d8393 | 0x7b6d8393 | sí |
+| addi x25, x16, 1392 | 0x57080c93 | 0x57080c93 | sí |
+| andi x30, x1, -209 | 0xf2f0ff13 | 0xf2f0ff13 | sí |
+| andi x8, x3, -1208 | 0xb481f413 | 0xb481f413 | sí |
+| andi x27, x30, -882 | 0xc8ef7d93 | 0xc8ef7d93 | sí |
+| lw x30, -1049(x14) | 0xbe772f03 | 0xbe772f03 | sí |
+| lw x29, 8(x30) | 0x008f2e83 | 0x008f2e83 | sí |
+| lw x25, 1875(x19) | 0x7539ac83 | 0x7539ac83 | sí |
+| lb x25, -389(x27) | 0xe7bd8c83 | 0xe7bd8c83 | sí |
+| lb x18, -1973(x17) | 0x84b88903 | 0x84b88903 | sí |
+| lb x2, 1705(x9) | 0x6a948103 | 0x6a948103 | sí |
+
+**Resultado I:** 12/12 en esta tabla (casos del kit / corridas previas).  
+Con [`casos_prueba.txt`](casos_prueba.txt) vía `./validate.sh`: **24/36 OK** (todos los R e I de ese archivo). Ver también [`validacion_resultado.md`](validacion_resultado.md).
+
+### Pendiente (fallan en validate.sh hasta implementar)
+
+| Formato | Instrucciones | Casos en casos_prueba.txt |
+|---------|---------------|---------------------------|
+| S | sw, sb | 6 (positivo / negativo / límite) |
+| B | beq, bne | 6 (positivo / negativo / límite) |
 | **Total objetivo** | 12 instrucciones | **36** |

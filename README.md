@@ -6,6 +6,8 @@
 
 ## Preparación del entorno
 
+**Entorno recomendado:** Linux (nativo o **WSL** en Windows). El punto de entrada `run.sh` es un script Bash; la verificación del curso suele ejecutarse en ese tipo de entorno.
+
 Para que `./run.sh "<instruccion>"` funcione en la verificación automática:
 
 1. Tener instalado **Python 3** (solo biblioteca estándar; no se requiere `pip` ni `requirements.txt`).
@@ -22,6 +24,14 @@ No se necesita ninguna otra dependencia ni comando de invocación alternativo. E
 ```
 
 La herramienta emite la línea `HEX: 0xXXXXXXXX` requerida por el script de verificación automática (§3.4).
+
+Validación local contra el toolchain (opcional, no es el punto de entrada del profesor):
+
+```bash
+export PATH=/opt/riscv/bin:$PATH   # si hace falta
+./validate.sh                      # 36 casos en casos_prueba.txt
+./validate.sh --markdown           # además genera validacion_resultado.md
+```
 
 Documentación técnica: [`DOCUMENTACION.md`](DOCUMENTACION.md).  
 Evidencia de validación contra el toolchain: [`VALIDACION.md`](VALIDACION.md).
