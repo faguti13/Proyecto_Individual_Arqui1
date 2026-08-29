@@ -28,12 +28,12 @@ Generado por `./validate.sh casos_prueba.txt --markdown`.
 | lb x2, 1705(x9) | 0x6a948103 | 0x6a948103 | sí |
 | lb x25, -389(x27) | 0xe7bd8c83 | 0xe7bd8c83 | sí |
 | lb x18, -2048(x17) | 0x80088903 | 0x80088903 | sí |
-| sw x16, 100(x31) | (error) | - | no |
-| sw x31, -411(x23) | (error) | - | no |
-| sw x8, 0(x2) | (error) | - | no |
-| sb x6, 72(x28) | (error) | - | no |
-| sb x18, -100(x20) | (error) | - | no |
-| sb x28, 2047(x11) | (error) | - | no |
+| sw x16, 100(x31) | 0x070fa223 | 0x070fa223 | sí |
+| sw x31, -411(x23) | 0xe7fba2a3 | 0xe7fba2a3 | sí |
+| sw x8, 0(x2) | 0x00812023 | 0x00812023 | sí |
+| sb x6, 72(x28) | 0x046e0423 | 0x046e0423 | sí |
+| sb x18, -100(x20) | 0xf92a0e23 | 0xf92a0e23 | sí |
+| sb x28, 2047(x11) | 0x7fc58fa3 | 0x7fc58fa3 | sí |
 | beq x31, x23, 16 | (error) | - | no |
 | beq x30, x4, -80 | (error) | - | no |
 | beq x1, x2, 0 | (error) | - | no |
@@ -41,4 +41,4 @@ Generado por `./validate.sh casos_prueba.txt --markdown`.
 | bne x17, x22, -16 | (error) | - | no |
 | bne x5, x0, 60 | (error) | - | no |
 
-**Resumen:** 24/36 coinciden.
+**Resumen:** 30/36 coinciden.

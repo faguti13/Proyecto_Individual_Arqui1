@@ -5,8 +5,8 @@
 **Estudiante:** Fabián Gutiérrez Jiménez — 2023141317  
 **II Semestre 2026**
 
-> **Estado actual:** implementados los formatos **R** (`add`, `sub`, `and`, `or`) e **I** (`addi`, `andi`, `lw`, `lb`).  
-> Los formatos S y B quedan para siguientes iteraciones; el ejemplo de salida S/B se añadirá cuando estén implementados.
+> **Estado actual:** implementados los formatos **R**, **I** y **S** (`add`…`lb`, `sw`, `sb`).  
+> Pendiente: formato **B** (`beq`, `bne`); el ejemplo de salida B se añadirá al implementarlo.
 
 La evidencia tabular de comparación contra el toolchain está en [`VALIDACION.md`](VALIDACION.md).  
 La preparación mínima para `./run.sh` está en [`README.md`](README.md).
@@ -67,11 +67,35 @@ Ensamblado:
 word = ((imm & 0xFFF) << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcode
 ```
 
+### Fase S (implementada)
+
+| Mnemónico | Formato | opcode `[6:0]` | funct3 `[14:12]` | Notas |
+|-----------|---------|----------------|------------------|-------|
+| `sw` | S | `0100011` (STORE) | `010` | sintaxis `rs2, imm(rs1)` |
+| `sb` | S | `0100011` (STORE) | `000` | almacena byte en memoria |
+
+**Fuente:** mismo manual ISA Vol. I, opcode `STORE`.
+
+Disposición de bits del formato S (el inmediato de 12 bits se **parte**):
+
+```
+31        25 24    20 19    15 14  12 11     7 6      0
++-----------+--------+--------+------+--------+--------+
+| imm[11:5] |  rs2   |  rs1   |funct3| imm[4:0]| opcode |
++-----------+--------+--------+------+--------+--------+
+```
+
+Ensamblado:
+
+```text
+imm12 = imm & 0xFFF
+word = ((imm12 >> 5) << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | ((imm12 & 0x1F) << 7) | opcode
+```
+
 ### Pendientes (subconjunto del enunciado)
 
 | Mnemónico | Formato previsto |
 |-----------|------------------|
-| `sw`, `sb` | S |
 | `beq`, `bne` | B |
 
 La herramienta debe generalizar a **cualquier** combinación válida de registros/inmediatos del subconjunto soportado, no solo a los casos documentados en la validación manual.
@@ -92,24 +116,25 @@ argv "<instrucción>"
         ├── R_TYPE  → parse_r_operands → pack_r
         ├── I_ARITH → parse_i_arith_operands (rd, rs1, imm) → pack_i (OP-IMM)
         ├── I_LOAD  → parse_i_load_operands (rd, imm(rs1)) → pack_i (LOAD)
+        ├── S_TYPE  → parse_s_store_operands (rs2, imm(rs1)) → pack_s
         └── pendiente / desconocida → error
         │
-        ├─► explain_instruction  (desglose visual R o I)
+        ├─► explain_instruction  (desglose visual R, I o S)
         └─► print "HEX: 0x........"
 ```
 
 Decisiones de diseño:
 
-- Tablas `R_TYPE`, `I_TYPE_ARITH` e `I_TYPE_LOAD` centralizan opcode/funct3(/funct7).
-- Inmediatos I: 12 bits con signo (−2048…2047); en la palabra se guardan como `imm & 0xFFF`.
-- Loads: parseo de la forma ensamblador `imm(rs1)`.
+- Tablas `R_TYPE`, `I_TYPE_*` y `S_TYPE` centralizan opcode/funct3(/funct7).
+- Inmediatos: 12 bits con signo (−2048…2047); en S el offset se reparte en `imm[11:5]` e `imm[4:0]`.
+- Loads/stores: sintaxis ensamblador `imm(rs1)`; en S el primer operando es `rs2` (dato a guardar).
 - `main` captura errores; si la codificación tiene éxito, siempre imprime `HEX:` en el formato exigido.
 
 ---
 
 ## 3. Ejemplos de salida explicativa
 
-Cuando existan S y B se documentará un ejemplo por esos formatos (requisito §3.5: una por R, I, S, B).
+Cuando exista B se documentará su ejemplo (requisito §3.5: una por R, I, S, B).
 
 ### Formato R
 
@@ -156,6 +181,29 @@ Semántica: x5 ← x25 + 2035
 HEX: 0x7f3c8293
 ```
 
+### Formato S
+
+```text
+$ ./run.sh "sw x8, -4(x2)"
+Instrucción: sw x8, -4(x2)
+Formato:     S
+Codificación: 0xfe812e23
+Binario 32:   11111110100000010010111000100011
+Campos:       1111111|01000|00010|010|11100|0100011
+              imm[11:5] | rs2 | rs1 | f3 | imm[4:0] | opcode
+
+Desglose de campos:
+  imm[11:5] bits [31:25]  bin=1111111  dec=127    | parte alta del offset (inmediato completo = -4)
+  rs2      bits [24:20]  bin=01000  dec=8      | registro fuente a almacenar (x8)
+  rs1      bits [19:15]  bin=00010  dec=2      | registro base de dirección (x2)
+  funct3   bits [14:12]  bin=010  dec=2      | selecciona la operación (sw)
+  imm[4:0] bits [11: 7]  bin=11100  dec=28     | parte baja del offset (inmediato completo = -4)
+  opcode   bits [ 6: 0]  bin=0100011  dec=35     | STORE = 0100011: almacenamiento en memoria
+
+Semántica: mem[x2 + -4] ← x8  (palabra (32 bits))
+HEX: 0xfe812e23
+```
+
 ---
 
 ## 4. Evidencia de comparación contra la herramienta oficial
@@ -167,7 +215,7 @@ Ver [`VALIDACION.md`](VALIDACION.md) y el log generado por [`validate.sh`](valid
 ./validate.sh --markdown      # escribe validacion_resultado.md
 ```
 
-Estado actual de esa corrida: **24/36 OK** (R e I). Los 12 de S/B fallan hasta implementar esos formatos; los 36 ensamblan correctamente con el toolchain.
+Estado actual de esa corrida: **30/36 OK** (R, I y S). Los 6 de B fallan hasta implementar `beq`/`bne`; los 36 ensamblan correctamente con el toolchain.
 
 ---
 

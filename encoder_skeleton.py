@@ -22,6 +22,7 @@ SOPORTADAS = ["add", "sub", "and", "or", "addi", "andi",
 OPCODE_OP = 0b0110011      # R: ALU registro-registro
 OPCODE_OP_IMM = 0b0010011  # I: ALU con inmediato
 OPCODE_LOAD = 0b0000011    # I: carga desde memoria
+OPCODE_STORE = 0b0100011   # S: almacenamiento en memoria
 
 # mnemonic -> (funct3, funct7)
 R_TYPE = {
@@ -43,7 +44,13 @@ I_TYPE_LOAD = {
     "lb": 0b000,
 }
 
-PENDIENTES = {"sw", "sb", "beq", "bne"}
+# mnemonic -> funct3  (opcode STORE)
+S_TYPE = {
+    "sw": 0b010,
+    "sb": 0b000,
+}
+
+PENDIENTES = {"beq", "bne"}
 
 
 def parse_register(token: str) -> int:
@@ -122,6 +129,29 @@ def parse_i_load_operands(rest: str) -> tuple[int, int, int]:
     return rd, rs1, imm
 
 
+def parse_s_store_operands(rest: str) -> tuple[int, int, int]:
+    """Parsea 'rs2, imm(rs1)' para sw/sb (p. ej. 'x8, -4(x2)')."""
+    parts = [p.strip() for p in rest.split(",")]
+    if len(parts) != 2:
+        raise ValueError(
+            f"Formato S store espera 2 operandos (rs2, imm(rs1)); "
+            f"se recibieron {len(parts)}"
+        )
+    rs2 = parse_register(parts[0])
+    match = re.fullmatch(
+        r"(-?(?:0x[0-9a-fA-F]+|\d+))\(\s*(x(?:[0-9]|[12][0-9]|3[01]))\s*\)",
+        parts[1],
+    )
+    if not match:
+        raise ValueError(
+            f"Operando de store inválido: '{parts[1]}' "
+            f"(se espera imm(rs1), p. ej. -4(x2) o 72(x28))"
+        )
+    imm = parse_imm12(match.group(1))
+    rs1 = parse_register(match.group(2))
+    return rs2, rs1, imm
+
+
 def split_mnemonic(instruction: str) -> tuple[str, str]:
     """Separa mnemónico y el resto de la cadena de instrucción."""
     text = instruction.strip()
@@ -155,6 +185,21 @@ def pack_i(imm: int, rs1: int, funct3: int, rd: int, opcode: int) -> int:
     )
 
 
+def pack_s(imm: int, rs2: int, rs1: int, funct3: int, opcode: int) -> int:
+    """Formato S: imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode."""
+    imm12 = imm & 0xFFF
+    imm_hi = (imm12 >> 5) & 0x7F
+    imm_lo = imm12 & 0x1F
+    return (
+        (imm_hi << 25)
+        | ((rs2 & 0x1F) << 20)
+        | ((rs1 & 0x1F) << 15)
+        | ((funct3 & 0x7) << 12)
+        | (imm_lo << 7)
+        | (opcode & 0x7F)
+    )
+
+
 def encode_instruction(instruction: str) -> int:
     """
     Recibe una instrucción como texto, p. ej. "add x5, x6, x7", y debe
@@ -182,10 +227,15 @@ def encode_instruction(instruction: str) -> int:
         rd, rs1, imm = parse_i_load_operands(rest)
         return pack_i(imm, rs1, funct3, rd, OPCODE_LOAD)
 
+    if mnemonic in S_TYPE:
+        funct3 = S_TYPE[mnemonic]
+        rs2, rs1, imm = parse_s_store_operands(rest)
+        return pack_s(imm, rs2, rs1, funct3, OPCODE_STORE)
+
     if mnemonic in PENDIENTES:
         raise NotImplementedError(
             f"'{mnemonic}' pertenece al subconjunto soportado pero aún no "
-            f"está implementada (fase actual: formatos R e I)."
+            f"está implementada (fase actual: formatos R, I y S)."
         )
 
     raise ValueError(
@@ -257,6 +307,50 @@ def _explain_r(instruction: str, mnemonic: str, word: int) -> str:
     ])
 
 
+def _explain_s(instruction: str, mnemonic: str, word: int) -> str:
+    opcode = word & 0x7F
+    imm_lo = (word >> 7) & 0x1F
+    funct3 = (word >> 12) & 0x7
+    rs1 = (word >> 15) & 0x1F
+    rs2 = (word >> 20) & 0x1F
+    imm_hi = (word >> 25) & 0x7F
+    imm_raw = (imm_hi << 5) | imm_lo
+    imm = _imm12_signed(imm_raw)
+
+    binary = format(word, "032b")
+    visual = (
+        f"{binary[0:7]}|{binary[7:12]}|{binary[12:17]}|"
+        f"{binary[17:20]}|{binary[20:25]}|{binary[25:32]}"
+    )
+    width = "palabra (32 bits)" if mnemonic == "sw" else "byte (8 bits)"
+    semantics = f"mem[x{rs1} + {imm}] ← x{rs2}  ({width})"
+
+    return "\n".join([
+        f"Instrucción: {instruction.strip()}",
+        f"Formato:     S",
+        f"Codificación: 0x{word:08x}",
+        f"Binario 32:   {binary}",
+        f"Campos:       {visual}",
+        f"              imm[11:5] | rs2 | rs1 | f3 | imm[4:0] | opcode",
+        "",
+        "Desglose de campos:",
+        _field_row("imm[11:5]", 31, 25, imm_hi,
+                   f"parte alta del offset (inmediato completo = {imm})"),
+        _field_row("rs2", 24, 20, rs2,
+                   f"registro fuente a almacenar (x{rs2})"),
+        _field_row("rs1", 19, 15, rs1,
+                   f"registro base de dirección (x{rs1})"),
+        _field_row("funct3", 14, 12, funct3,
+                   f"selecciona la operación ({mnemonic})"),
+        _field_row("imm[4:0]", 11, 7, imm_lo,
+                   f"parte baja del offset (inmediato completo = {imm})"),
+        _field_row("opcode", 6, 0, opcode,
+                   "STORE = 0100011: almacenamiento en memoria"),
+        "",
+        f"Semántica: {semantics}",
+    ])
+
+
 def _explain_i(instruction: str, mnemonic: str, word: int) -> str:
     opcode = word & 0x7F
     rd = (word >> 7) & 0x1F
@@ -318,6 +412,8 @@ def explain_instruction(instruction: str, word: int) -> str:
         return _explain_r(instruction, mnemonic, word)
     if mnemonic in I_TYPE_ARITH or mnemonic in I_TYPE_LOAD:
         return _explain_i(instruction, mnemonic, word)
+    if mnemonic in S_TYPE:
+        return _explain_s(instruction, mnemonic, word)
 
     raise NotImplementedError(
         f"explain_instruction: formato de '{mnemonic}' aún no implementado"

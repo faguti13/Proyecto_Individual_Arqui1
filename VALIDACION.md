@@ -7,7 +7,7 @@
 Entregable §3.5 (punto 2): comparación del codificador contra el toolchain RISC-V 32-bit.
 
 > **Estado:** documentados y ejercitados **36 casos** en [`casos_prueba.txt`](casos_prueba.txt) (12 × 3).  
-> Codificador: **24/36** coinciden con el toolchain (R e I). S y B pendientes de implementación.  
+> Codificador: **30/36** coinciden con el toolchain (R, I y S). B pendiente (`beq`, `bne`).  
 > Script: [`validate.sh`](validate.sh) — `./validate.sh` o `./validate.sh --markdown`.
 
 ## Toolchain y procedimiento
@@ -69,13 +69,26 @@ Los valores en la verificación automática del profesor pueden diferir; la herr
 | lb x18, -1973(x17) | 0x84b88903 | 0x84b88903 | sí |
 | lb x2, 1705(x9) | 0x6a948103 | 0x6a948103 | sí |
 
-**Resultado I:** 12/12 en esta tabla (casos del kit / corridas previas).  
-Con [`casos_prueba.txt`](casos_prueba.txt) vía `./validate.sh`: **24/36 OK** (todos los R e I de ese archivo). Ver también [`validacion_resultado.md`](validacion_resultado.md).
+**Resultado I:** 12/12 (kit y casos_prueba.txt).
+
+---
+
+## Formato S — 6 casos del kit + 6 en casos_prueba.txt
+
+| Instrucción | HEX modelo | HEX objdump | ¿Coincide? |
+|-------------|------------|-------------|------------|
+| sw x31, -411(x23) | 0xe7fba2a3 | 0xe7fba2a3 | sí |
+| sw x16, 1774(x31) | 0x6f0fa723 | 0x6f0fa723 | sí |
+| sw x31, -1773(x27) | 0x91fda9a3 | 0x91fda9a3 | sí |
+| sb x18, 1701(x20) | 0x6b2a02a3 | 0x6b2a02a3 | sí |
+| sb x6, 72(x28) | 0x046e0423 | 0x046e0423 | sí |
+| sb x28, 1439(x11) | 0x59c58fa3 | 0x59c58fa3 | sí |
+
+**Resultado S:** 6/6 kit; **30/36** en `./validate.sh casos_prueba.txt` (incluye los 6 S del archivo). Ver [`validacion_resultado.md`](validacion_resultado.md).
 
 ### Pendiente (fallan en validate.sh hasta implementar)
 
 | Formato | Instrucciones | Casos en casos_prueba.txt |
 |---------|---------------|---------------------------|
-| S | sw, sb | 6 (positivo / negativo / límite) |
 | B | beq, bne | 6 (positivo / negativo / límite) |
 | **Total objetivo** | 12 instrucciones | **36** |
