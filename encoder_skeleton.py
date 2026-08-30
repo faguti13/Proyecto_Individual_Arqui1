@@ -23,6 +23,7 @@ OPCODE_OP = 0b0110011      # R: ALU registro-registro
 OPCODE_OP_IMM = 0b0010011  # I: ALU con inmediato
 OPCODE_LOAD = 0b0000011    # I: carga desde memoria
 OPCODE_STORE = 0b0100011   # S: almacenamiento en memoria
+OPCODE_BRANCH = 0b1100011  # B: salto condicional
 
 # mnemonic -> (funct3, funct7)
 R_TYPE = {
@@ -50,7 +51,11 @@ S_TYPE = {
     "sb": 0b000,
 }
 
-PENDIENTES = {"beq", "bne"}
+# mnemonic -> funct3  (opcode BRANCH)
+B_TYPE = {
+    "beq": 0b000,
+    "bne": 0b001,
+}
 
 
 def parse_register(token: str) -> int:
@@ -75,6 +80,26 @@ def parse_imm12(token: str) -> int:
     if value < -2048 or value > 2047:
         raise ValueError(
             f"Inmediato fuera de rango de 12 bits: {value} (válido: -2048…2047)"
+        )
+    return value
+
+
+def parse_branch_offset(token: str) -> int:
+    """Parsea offset de salto en bytes (par, rango B-type: -4096…4094)."""
+    token = token.strip()
+    try:
+        value = int(token, 0)
+    except ValueError as exc:
+        raise ValueError(
+            f"Offset de salto inválido: '{token}' (se espera entero con signo en bytes)"
+        ) from exc
+    if value % 2 != 0:
+        raise ValueError(
+            f"Offset de salto debe ser par (bytes): {value}"
+        )
+    if value < -4096 or value > 4094:
+        raise ValueError(
+            f"Offset fuera de rango B-type: {value} (válido: -4096…4094, par)"
         )
     return value
 
@@ -152,6 +177,20 @@ def parse_s_store_operands(rest: str) -> tuple[int, int, int]:
     return rs2, rs1, imm
 
 
+def parse_b_branch_operands(rest: str) -> tuple[int, int, int]:
+    """Parsea 'rs1, rs2, offset' para beq/bne (offset en bytes)."""
+    parts = [p.strip() for p in rest.split(",")]
+    if len(parts) != 3:
+        raise ValueError(
+            f"Formato B espera 3 operandos (rs1, rs2, offset); "
+            f"se recibieron {len(parts)}"
+        )
+    rs1 = parse_register(parts[0])
+    rs2 = parse_register(parts[1])
+    offset = parse_branch_offset(parts[2])
+    return rs1, rs2, offset
+
+
 def split_mnemonic(instruction: str) -> tuple[str, str]:
     """Separa mnemónico y el resto de la cadena de instrucción."""
     text = instruction.strip()
@@ -200,6 +239,25 @@ def pack_s(imm: int, rs2: int, rs1: int, funct3: int, opcode: int) -> int:
     )
 
 
+def pack_b(offset: int, rs2: int, rs1: int, funct3: int, opcode: int) -> int:
+    """Formato B: imm[12|10:5] | rs2 | rs1 | funct3 | imm[4:1|11] | opcode."""
+    imm = offset & 0x1FFF  # imm[12:0] con imm[0]=0 (offset par)
+    imm_12 = (imm >> 12) & 0x1
+    imm_11 = (imm >> 11) & 0x1
+    imm_10_5 = (imm >> 5) & 0x3F
+    imm_4_1 = (imm >> 1) & 0xF
+    return (
+        (imm_12 << 31)
+        | (imm_10_5 << 25)
+        | ((rs2 & 0x1F) << 20)
+        | ((rs1 & 0x1F) << 15)
+        | ((funct3 & 0x7) << 12)
+        | (imm_4_1 << 8)
+        | (imm_11 << 7)
+        | (opcode & 0x7F)
+    )
+
+
 def encode_instruction(instruction: str) -> int:
     """
     Recibe una instrucción como texto, p. ej. "add x5, x6, x7", y debe
@@ -232,11 +290,10 @@ def encode_instruction(instruction: str) -> int:
         rs2, rs1, imm = parse_s_store_operands(rest)
         return pack_s(imm, rs2, rs1, funct3, OPCODE_STORE)
 
-    if mnemonic in PENDIENTES:
-        raise NotImplementedError(
-            f"'{mnemonic}' pertenece al subconjunto soportado pero aún no "
-            f"está implementada (fase actual: formatos R, I y S)."
-        )
+    if mnemonic in B_TYPE:
+        funct3 = B_TYPE[mnemonic]
+        rs1, rs2, offset = parse_b_branch_operands(rest)
+        return pack_b(offset, rs2, rs1, funct3, OPCODE_BRANCH)
 
     raise ValueError(
         f"Instrucción no soportada: '{mnemonic}'. "
@@ -260,6 +317,18 @@ def _imm12_signed(raw12: int) -> int:
     """Interpreta imm[11:0] como entero con signo."""
     raw12 &= 0xFFF
     return raw12 - 0x1000 if raw12 & 0x800 else raw12
+
+
+def _branch_offset_from_word(word: int) -> int:
+    """Reconstruye el offset en bytes (imm[12:1] << 1) desde una palabra B."""
+    imm_12 = (word >> 31) & 0x1
+    imm_11 = (word >> 7) & 0x1
+    imm_10_5 = (word >> 25) & 0x3F
+    imm_4_1 = (word >> 8) & 0xF
+    imm = (imm_12 << 12) | (imm_11 << 11) | (imm_10_5 << 5) | (imm_4_1 << 1)
+    if imm & 0x1000:
+        imm -= 0x2000
+    return imm
 
 
 def _explain_r(instruction: str, mnemonic: str, word: int) -> str:
@@ -351,6 +420,58 @@ def _explain_s(instruction: str, mnemonic: str, word: int) -> str:
     ])
 
 
+def _explain_b(instruction: str, mnemonic: str, word: int) -> str:
+    opcode = word & 0x7F
+    imm_11 = (word >> 7) & 0x1
+    imm_4_1 = (word >> 8) & 0xF
+    funct3 = (word >> 12) & 0x7
+    rs1 = (word >> 15) & 0x1F
+    rs2 = (word >> 20) & 0x1F
+    imm_10_5 = (word >> 25) & 0x3F
+    imm_12 = (word >> 31) & 0x1
+    offset = _branch_offset_from_word(word)
+
+    binary = format(word, "032b")
+    visual = (
+        f"{binary[0:1]}|{binary[1:7]}|{binary[7:12]}|{binary[12:17]}|"
+        f"{binary[17:20]}|{binary[20:24]}|{binary[24:25]}|{binary[25:32]}"
+    )
+    cond = "==" if mnemonic == "beq" else "!="
+    semantics = (
+        f"si x{rs1} {cond} x{rs2}, saltar PC + {offset} bytes "
+        f"(destino relativo a la instrucción)"
+    )
+
+    return "\n".join([
+        f"Instrucción: {instruction.strip()}",
+        f"Formato:     B",
+        f"Codificación: 0x{word:08x}",
+        f"Binario 32:   {binary}",
+        f"Campos:       {visual}",
+        f"              imm12|imm10:5| rs2 | rs1 | f3 |imm4:1|i11| opcode",
+        "",
+        "Desglose de campos:",
+        _field_row("imm[12]", 31, 31, imm_12,
+                   f"bit alto del offset (offset bytes = {offset})"),
+        _field_row("imm[10:5]", 30, 25, imm_10_5,
+                   "parte media del offset de salto"),
+        _field_row("rs2", 24, 20, rs2,
+                   f"segundo registro comparado (x{rs2})"),
+        _field_row("rs1", 19, 15, rs1,
+                   f"primer registro comparado (x{rs1})"),
+        _field_row("funct3", 14, 12, funct3,
+                   f"{'igual' if mnemonic == 'beq' else 'distinto'} ({mnemonic})"),
+        _field_row("imm[4:1]", 11, 8, imm_4_1,
+                   "parte baja del offset de salto"),
+        _field_row("imm[11]", 7, 7, imm_11,
+                   "bit intermedio del offset"),
+        _field_row("opcode", 6, 0, opcode,
+                   "BRANCH = 1100011: salto condicional"),
+        "",
+        f"Semántica: {semantics}",
+    ])
+
+
 def _explain_i(instruction: str, mnemonic: str, word: int) -> str:
     opcode = word & 0x7F
     rd = (word >> 7) & 0x1F
@@ -414,6 +535,8 @@ def explain_instruction(instruction: str, word: int) -> str:
         return _explain_i(instruction, mnemonic, word)
     if mnemonic in S_TYPE:
         return _explain_s(instruction, mnemonic, word)
+    if mnemonic in B_TYPE:
+        return _explain_b(instruction, mnemonic, word)
 
     raise NotImplementedError(
         f"explain_instruction: formato de '{mnemonic}' aún no implementado"

@@ -34,11 +34,11 @@ Generado por `./validate.sh casos_prueba.txt --markdown`.
 | sb x6, 72(x28) | 0x046e0423 | 0x046e0423 | sí |
 | sb x18, -100(x20) | 0xf92a0e23 | 0xf92a0e23 | sí |
 | sb x28, 2047(x11) | 0x7fc58fa3 | 0x7fc58fa3 | sí |
-| beq x31, x23, 16 | (error) | - | no |
-| beq x30, x4, -80 | (error) | - | no |
-| beq x1, x2, 0 | (error) | - | no |
-| bne x12, x15, 16 | (error) | - | no |
-| bne x17, x22, -16 | (error) | - | no |
-| bne x5, x0, 60 | (error) | - | no |
+| beq x31, x23, 16 | 0x017f8863 | 0x017f8863 | sí |
+| beq x30, x4, -80 | 0xfa4f08e3 | 0xfa4f08e3 | sí |
+| beq x1, x2, 0 | 0x00208063 | 0x00208063 | sí |
+| bne x12, x15, 16 | 0x00f61863 | 0x00f61863 | sí |
+| bne x17, x22, -16 | 0xff6898e3 | 0xff6898e3 | sí |
+| bne x5, x0, 60 | 0x02029e63 | 0x02029e63 | sí |
 
-**Resumen:** 30/36 coinciden.
+**Resumen:** 36/36 coinciden.

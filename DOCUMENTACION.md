@@ -5,8 +5,7 @@
 **Estudiante:** Fabián Gutiérrez Jiménez — 2023141317  
 **II Semestre 2026**
 
-> **Estado actual:** implementados los formatos **R**, **I** y **S** (`add`…`lb`, `sw`, `sb`).  
-> Pendiente: formato **B** (`beq`, `bne`); el ejemplo de salida B se añadirá al implementarlo.
+> **Estado actual:** implementados los **12 instrucciones** del subconjunto RV32I (formatos **R**, **I**, **S** y **B**).
 
 La evidencia tabular de comparación contra el toolchain está en [`VALIDACION.md`](VALIDACION.md).  
 La preparación mínima para `./run.sh` está en [`README.md`](README.md).
@@ -92,11 +91,31 @@ imm12 = imm & 0xFFF
 word = ((imm12 >> 5) << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | ((imm12 & 0x1F) << 7) | opcode
 ```
 
-### Pendientes (subconjunto del enunciado)
+### Fase B (implementada)
 
-| Mnemónico | Formato previsto |
-|-----------|------------------|
-| `beq`, `bne` | B |
+| Mnemónico | Formato | opcode `[6:0]` | funct3 `[14:12]` | Notas |
+|-----------|---------|----------------|------------------|-------|
+| `beq` | B | `1100011` (BRANCH) | `000` | sintaxis `rs1, rs2, offset` (bytes, par) |
+| `bne` | B | `1100011` (BRANCH) | `001` | offset relativo a PC de la instrucción |
+
+**Fuente:** mismo manual ISA Vol. I, opcode `BRANCH`.
+
+Disposición de bits del formato B (inmediato partido):
+
+```
+31 30     25 24    20 19    15 14  12 11     8 7 6      0
++--+---------+--------+--------+------+------+-+--------+
+|12| 10:5   |  rs2   |  rs1   |funct3| 4:1  |11| opcode |
++--+---------+--------+--------+------+------+-+--------+
+```
+
+Ensamblado (`offset` en bytes, par):
+
+```text
+imm = offset & 0x1FFF
+word = ((imm >> 12) & 1) << 31 | ((imm >> 5) & 0x3F) << 25 | (rs2 << 20)
+     | (rs1 << 15) | (funct3 << 12) | ((imm >> 1) & 0xF) << 8 | ((imm >> 11) & 1) << 7 | opcode
+```
 
 La herramienta debe generalizar a **cualquier** combinación válida de registros/inmediatos del subconjunto soportado, no solo a los casos documentados en la validación manual.
 
@@ -117,24 +136,24 @@ argv "<instrucción>"
         ├── I_ARITH → parse_i_arith_operands (rd, rs1, imm) → pack_i (OP-IMM)
         ├── I_LOAD  → parse_i_load_operands (rd, imm(rs1)) → pack_i (LOAD)
         ├── S_TYPE  → parse_s_store_operands (rs2, imm(rs1)) → pack_s
-        └── pendiente / desconocida → error
+        ├── B_TYPE  → parse_b_branch_operands (rs1, rs2, offset) → pack_b
+        └── desconocida → error
         │
-        ├─► explain_instruction  (desglose visual R, I o S)
+        ├─► explain_instruction  (desglose visual R, I, S o B)
         └─► print "HEX: 0x........"
 ```
 
 Decisiones de diseño:
 
-- Tablas `R_TYPE`, `I_TYPE_*` y `S_TYPE` centralizan opcode/funct3(/funct7).
-- Inmediatos: 12 bits con signo (−2048…2047); en S el offset se reparte en `imm[11:5]` e `imm[4:0]`.
+- Tablas `R_TYPE`, `I_TYPE_*`, `S_TYPE` y `B_TYPE` centralizan opcode/funct3(/funct7).
+- Inmediatos: 12 bits con signo; en S y B el offset se reparte en campos no contiguos.
+- Branches: offset en **bytes** (par), rango −4096…4094.
 - Loads/stores: sintaxis ensamblador `imm(rs1)`; en S el primer operando es `rs2` (dato a guardar).
 - `main` captura errores; si la codificación tiene éxito, siempre imprime `HEX:` en el formato exigido.
 
 ---
 
-## 3. Ejemplos de salida explicativa
-
-Cuando exista B se documentará su ejemplo (requisito §3.5: una por R, I, S, B).
+## 3. Ejemplos de salida explicativa (una por formato R, I, S, B)
 
 ### Formato R
 
@@ -204,6 +223,31 @@ Semántica: mem[x2 + -4] ← x8  (palabra (32 bits))
 HEX: 0xfe812e23
 ```
 
+### Formato B
+
+```text
+$ ./run.sh "beq x31, x23, 16"
+Instrucción: beq x31, x23, 16
+Formato:     B
+Codificación: 0x017f8863
+Binario 32:   00000001011111111000100001100011
+Campos:       0|000000|10111|11111|000|1000|0|1100011
+              imm12|imm10:5| rs2 | rs1 | f3 |imm4:1|i11| opcode
+
+Desglose de campos:
+  imm[12]  bits [31:31]  bin=0  dec=0      | bit alto del offset (offset bytes = 16)
+  imm[10:5] bits [30:25]  bin=000000  dec=0      | parte media del offset de salto
+  rs2      bits [24:20]  bin=10111  dec=23     | segundo registro comparado (x23)
+  rs1      bits [19:15]  bin=11111  dec=31     | primer registro comparado (x31)
+  funct3   bits [14:12]  bin=000  dec=0      | igual (beq)
+  imm[4:1] bits [11: 8]  bin=1000  dec=8      | parte baja del offset de salto
+  imm[11]  bits [ 7: 7]  bin=0  dec=0      | bit intermedio del offset
+  opcode   bits [ 6: 0]  bin=1100011  dec=99     | BRANCH = 1100011: salto condicional
+
+Semántica: si x31 == x23, saltar PC + 16 bytes (destino relativo a la instrucción)
+HEX: 0x017f8863
+```
+
 ---
 
 ## 4. Evidencia de comparación contra la herramienta oficial
@@ -215,7 +259,7 @@ Ver [`VALIDACION.md`](VALIDACION.md) y el log generado por [`validate.sh`](valid
 ./validate.sh --markdown      # escribe validacion_resultado.md
 ```
 
-Estado actual de esa corrida: **30/36 OK** (R, I y S). Los 6 de B fallan hasta implementar `beq`/`bne`; los 36 ensamblan correctamente con el toolchain.
+Estado actual de esa corrida: **36/36 OK** (subconjunto completo). Los saltos B en `validate.sh` usan layout con etiquetas para que el ensamblador resuelva el destino dentro de la sección.
 
 ---
 

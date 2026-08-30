@@ -6,8 +6,8 @@
 
 Entregable §3.5 (punto 2): comparación del codificador contra el toolchain RISC-V 32-bit.
 
-> **Estado:** documentados y ejercitados **36 casos** en [`casos_prueba.txt`](casos_prueba.txt) (12 × 3).  
-> Codificador: **30/36** coinciden con el toolchain (R, I y S). B pendiente (`beq`, `bne`).  
+> **Estado:** **36/36 casos OK** — subconjunto completo (12 instrucciones × 3 escenarios).  
+> Archivos: [`casos_prueba.txt`](casos_prueba.txt), [`vectores_ejemplo.txt`](vectores_ejemplo.txt), log [`validacion_resultado.md`](validacion_resultado.md).  
 > Script: [`validate.sh`](validate.sh) — `./validate.sh` o `./validate.sh --markdown`.
 
 ## Toolchain y procedimiento
@@ -19,19 +19,34 @@ Entregable §3.5 (punto 2): comparación del codificador contra el toolchain RIS
 
 ```bash
 ./validate.sh casos_prueba.txt --markdown
+./validate.sh vectores_ejemplo.txt
 ```
 
 Por cada caso el script:
 1. Ejecuta `./run.sh "<instruccion>"` y lee `HEX: 0x...`
-2. Ensambla la misma instrucción con el toolchain
+2. Ensambla la instrucción (layout especial para saltos B con etiquetas)
 3. Extrae el encoding con `objdump -d`
 4. Compara modelo vs objdump
 
-Los valores en la verificación automática del profesor pueden diferir; la herramienta debe generalizar al subconjunto soportado.
+Los valores en la verificación automática del profesor pueden diferir; la herramienta generaliza al subconjunto soportado.
+
+**Nota B-type:** el offset numérico en `./run.sh` se codifica directamente; en la validación con `as`, los saltos usan etiquetas (`start`/`target`) con `.space` para que el destino quede dentro de la sección `.text`.
 
 ---
 
-## Formato R — 12 casos (3 por instrucción)
+## Resumen por formato
+
+| Formato | Instrucciones | Casos | Resultado |
+|---------|---------------|-------|-----------|
+| R | add, sub, and, or | 12 | 12/12 |
+| I | addi, andi, lw, lb | 12 | 12/12 |
+| S | sw, sb | 6 (kit) + 6 (casos_prueba) | OK |
+| B | beq, bne | 6 (kit) + 6 (casos_prueba) | OK |
+| **Total** | **12** | **36** | **36/36** |
+
+---
+
+## Formato R — 12 casos (kit)
 
 | Instrucción | HEX modelo | HEX objdump | ¿Coincide? |
 |-------------|------------|-------------|------------|
@@ -48,11 +63,9 @@ Los valores en la verificación automática del profesor pueden diferir; la herr
 | or x19, x1, x23 | 0x0170e9b3 | 0x0170e9b3 | sí |
 | or x23, x29, x27 | 0x01beebb3 | 0x01beebb3 | sí |
 
-**Resultado R:** 12/12. Escenarios: distintos registros y uso de `x0`.
-
 ---
 
-## Formato I — 12 casos (3 por instrucción)
+## Formato I — 12 casos (kit)
 
 | Instrucción | HEX modelo | HEX objdump | ¿Coincide? |
 |-------------|------------|-------------|------------|
@@ -69,11 +82,9 @@ Los valores en la verificación automática del profesor pueden diferir; la herr
 | lb x18, -1973(x17) | 0x84b88903 | 0x84b88903 | sí |
 | lb x2, 1705(x9) | 0x6a948103 | 0x6a948103 | sí |
 
-**Resultado I:** 12/12 (kit y casos_prueba.txt).
-
 ---
 
-## Formato S — 6 casos del kit + 6 en casos_prueba.txt
+## Formato S — 6 casos (kit)
 
 | Instrucción | HEX modelo | HEX objdump | ¿Coincide? |
 |-------------|------------|-------------|------------|
@@ -84,11 +95,17 @@ Los valores en la verificación automática del profesor pueden diferir; la herr
 | sb x6, 72(x28) | 0x046e0423 | 0x046e0423 | sí |
 | sb x28, 1439(x11) | 0x59c58fa3 | 0x59c58fa3 | sí |
 
-**Resultado S:** 6/6 kit; **30/36** en `./validate.sh casos_prueba.txt` (incluye los 6 S del archivo). Ver [`validacion_resultado.md`](validacion_resultado.md).
+---
 
-### Pendiente (fallan en validate.sh hasta implementar)
+## Formato B — 6 casos (kit)
 
-| Formato | Instrucciones | Casos en casos_prueba.txt |
-|---------|---------------|---------------------------|
-| B | beq, bne | 6 (positivo / negativo / límite) |
-| **Total objetivo** | 12 instrucciones | **36** |
+| Instrucción | HEX modelo | HEX objdump | ¿Coincide? |
+|-------------|------------|-------------|------------|
+| beq x30, x4, -80 | 0xfa4f08e3 | 0xfa4f08e3 | sí |
+| beq x31, x23, 16 | 0x017f8863 | 0x017f8863 | sí |
+| beq x26, x9, 60 | 0x029d0e63 | 0x029d0e63 | sí |
+| bne x5, x0, 60 | 0x02029e63 | 0x02029e63 | sí |
+| bne x12, x15, 16 | 0x00f61863 | 0x00f61863 | sí |
+| bne x17, x22, 20 | 0x01689a63 | 0x01689a63 | sí |
+
+**Resultado global:** 36/36 coinciden (kit + [`casos_prueba.txt`](casos_prueba.txt) vía `./validate.sh`).

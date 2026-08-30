@@ -52,6 +52,60 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# Genera .s con layout válido para saltos B (el offset numérico debe tener destino en sección).
+write_asm_file() {
+    local instr="$1" out="$2"
+    local mnemonic="${instr%% *}"
+    local rest="${instr#* }"
+    local base="${rest%,*}"
+
+    case "$mnemonic" in
+        beq|bne)
+            local offset="${instr##*, }"
+            if [[ ! "$offset" =~ ^-?[0-9]+$ ]]; then
+                printf '.text\n\t%s\n' "$instr" > "$out"
+                return
+            fi
+            if [[ "$offset" -eq 0 ]]; then
+                {
+                    echo '.text'
+                    echo 'start:'
+                    echo -e "\t${mnemonic} ${base}, start"
+                } > "$out"
+            elif [[ "$offset" -gt 0 ]]; then
+                {
+                    echo '.text'
+                    echo -e "\t${mnemonic} ${base}, target"
+                    echo ".space $((offset - 4))"
+                    echo 'target:'
+                } > "$out"
+            else
+                local abs="${offset#-}"
+                {
+                    echo '.text'
+                    echo 'start:'
+                    echo ".space $abs"
+                    echo -e "\t${mnemonic} ${base}, start"
+                } > "$out"
+            fi
+            ;;
+        *)
+            printf '.text\n\t%s\n' "$instr" > "$out"
+            ;;
+    esac
+}
+
+extract_objdump_hex() {
+    local obj="$1" mnemonic="$2"
+    local raw=""
+    if [[ "$mnemonic" == beq || "$mnemonic" == bne ]]; then
+        raw="$("$OD" -d "$obj" | awk '/\t(beq|bne|beqz|bnez)\t/{print $2; exit}')"
+    else
+        raw="$("$OD" -d "$obj" | awk '/^[ ]*[0-9a-f]+:/{print $2; exit}')"
+    fi
+    echo "0x$(echo "$raw" | tr 'A-F' 'a-f')"
+}
+
 ok=0
 fail=0
 skip=0
@@ -98,15 +152,15 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fi
 
     # Toolchain
-    printf '.text\n\t%s\n' "$instr" > "$TMP/caso.s"
+    mnemonic="${instr%% *}"
+    write_asm_file "$instr" "$TMP/caso.s"
     if ! "$AS" -march=rv32i -mabi=ilp32 -o "$TMP/caso.o" "$TMP/caso.s" 2>"$TMP/as.err"; then
         printf "%-4s %-28s %-12s %-12s %s\n" "$total" "$instr" "$model_hex" "(as fail)" "FAIL"
         fail=$((fail + 1))
         md_rows+=("| $instr | $model_hex | (as fail) | no |")
         continue
     fi
-    dump_raw="$("$OD" -d "$TMP/caso.o" | awk '/^[ ]*[0-9a-f]+:/{print $2; exit}')"
-    dump_hex="0x$(echo "$dump_raw" | tr 'A-F' 'a-f')"
+    dump_hex="$(extract_objdump_hex "$TMP/caso.o" "$mnemonic")"
 
     if [[ "$model_hex" == "$dump_hex" ]]; then
         printf "%-4s %-28s %-12s %-12s %s\n" "$total" "$instr" "$model_hex" "$dump_hex" "OK"
