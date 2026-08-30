@@ -25,13 +25,5 @@ No se necesita ninguna otra dependencia ni comando de invocación alternativo. E
 
 La herramienta emite la línea `HEX: 0xXXXXXXXX` requerida por el script de verificación automática (§3.4).
 
-Validación local contra el toolchain (opcional, no es el punto de entrada del profesor):
-
-```bash
-export PATH=/opt/riscv/bin:$PATH   # si hace falta
-./validate.sh                      # 36 casos en casos_prueba.txt
-./validate.sh --markdown           # además genera validacion_resultado.md
-```
-
 Documentación técnica: [`DOCUMENTACION.md`](DOCUMENTACION.md).  
 Evidencia de validación contra el toolchain: [`VALIDACION.md`](VALIDACION.md).

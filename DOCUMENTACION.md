@@ -252,14 +252,9 @@ HEX: 0x017f8863
 
 ## 4. Evidencia de comparación contra la herramienta oficial
 
-Ver [`VALIDACION.md`](VALIDACION.md) y el log generado por [`validate.sh`](validate.sh). Los **36 casos** del enunciado están en [`casos_prueba.txt`](casos_prueba.txt) (3 escenarios por instrucción: típico/positivo/negativo/límite según el formato).
+Ver [`VALIDACION.md`](VALIDACION.md): tablas con instrucción, HEX del modelo, HEX de `objdump` y coincidencia para los **36 casos** (12 instrucciones × 3 escenarios), usando [`vectores_ejemplo.txt`](vectores_ejemplo.txt) y validación manual con el toolchain.
 
-```bash
-./validate.sh                 # compara modelo vs objdump
-./validate.sh --markdown      # escribe validacion_resultado.md
-```
-
-Estado actual de esa corrida: **36/36 OK** (subconjunto completo). Los saltos B en `validate.sh` usan layout con etiquetas para que el ensamblador resuelva el destino dentro de la sección.
+**Resultado:** 36/36 coinciden con el subconjunto completo RV32I del enunciado.
 
 ---
 

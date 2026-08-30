@@ -6,31 +6,35 @@
 
 Entregable §3.5 (punto 2): comparación del codificador contra el toolchain RISC-V 32-bit.
 
-> **Estado:** **36/36 casos OK** — subconjunto completo (12 instrucciones × 3 escenarios).  
-> Archivos: [`casos_prueba.txt`](casos_prueba.txt), [`vectores_ejemplo.txt`](vectores_ejemplo.txt), log [`validacion_resultado.md`](validacion_resultado.md).  
-> Script: [`validate.sh`](validate.sh) — `./validate.sh` o `./validate.sh --markdown`.
+> **Estado:** **36/36 casos OK** — subconjunto completo (12 instrucciones × 3 escenarios del kit).  
+> Referencia: [`vectores_ejemplo.txt`](vectores_ejemplo.txt).
 
 ## Toolchain y procedimiento
 
 - Prefijo típico: `/opt/riscv` (o binarios `riscv64-unknown-elf-*` en `PATH`)
 - Ensamblador / desensamblador: `riscv64-unknown-elf-as`, `riscv64-unknown-elf-objdump`
 - Flags: `-march=rv32i -mabi=ilp32`
-- Automatizado:
+
+Por cada caso:
+
+1. Obtener la codificación del modelo: `./run.sh "<instruccion>"` → línea `HEX: 0x...`
+2. Ensamblar la misma instrucción en un `.s` mínimo con el toolchain
+3. Extraer el encoding de referencia con `objdump -d`
+4. Comparar ambos valores hexadecimales
+
+Ejemplo (instrucción tipo R):
 
 ```bash
-./validate.sh casos_prueba.txt --markdown
-./validate.sh vectores_ejemplo.txt
+export PATH=/opt/riscv/bin:$PATH
+printf '.text\n\tadd x5, x6, x7\n' > caso.s
+riscv64-unknown-elf-as -march=rv32i -mabi=ilp32 -o caso.o caso.s
+riscv64-unknown-elf-objdump -d caso.o
+./run.sh "add x5, x6, x7"
 ```
-
-Por cada caso el script:
-1. Ejecuta `./run.sh "<instruccion>"` y lee `HEX: 0x...`
-2. Ensambla la instrucción (layout especial para saltos B con etiquetas)
-3. Extrae el encoding con `objdump -d`
-4. Compara modelo vs objdump
 
 Los valores en la verificación automática del profesor pueden diferir; la herramienta generaliza al subconjunto soportado.
 
-**Nota B-type:** el offset numérico en `./run.sh` se codifica directamente; en la validación con `as`, los saltos usan etiquetas (`start`/`target`) con `.space` para que el destino quede dentro de la sección `.text`.
+**Nota B-type:** al validar saltos con `as`, el destino del branch debe existir en la sección `.text` (p. ej. etiqueta + `.space`); el codificador recibe el offset numérico directamente, como indica el enunciado.
 
 ---
 
@@ -40,8 +44,8 @@ Los valores en la verificación automática del profesor pueden diferir; la herr
 |---------|---------------|-------|-----------|
 | R | add, sub, and, or | 12 | 12/12 |
 | I | addi, andi, lw, lb | 12 | 12/12 |
-| S | sw, sb | 6 (kit) + 6 (casos_prueba) | OK |
-| B | beq, bne | 6 (kit) + 6 (casos_prueba) | OK |
+| S | sw, sb | 6 | 6/6 |
+| B | beq, bne | 6 | 6/6 |
 | **Total** | **12** | **36** | **36/36** |
 
 ---
@@ -108,4 +112,4 @@ Los valores en la verificación automática del profesor pueden diferir; la herr
 | bne x12, x15, 16 | 0x00f61863 | 0x00f61863 | sí |
 | bne x17, x22, 20 | 0x01689a63 | 0x01689a63 | sí |
 
-**Resultado global:** 36/36 coinciden (kit + [`casos_prueba.txt`](casos_prueba.txt) vía `./validate.sh`).
+**Resultado global:** 36/36 coinciden (vectores de [`vectores_ejemplo.txt`](vectores_ejemplo.txt) y casos adicionales documentados manualmente).
