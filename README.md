@@ -25,5 +25,5 @@ No se necesita ninguna otra dependencia ni comando de invocación alternativo. E
 
 La herramienta emite la línea `HEX: 0xXXXXXXXX` requerida por el script de verificación automática (§3.4).
 
-Documentación técnica: [`DOCUMENTACION.md`](DOCUMENTACION.md).  
-Evidencia de validación contra el toolchain: [`VALIDACION.md`](VALIDACION.md).
+Documentación técnica: [`DOCUMENTACION.md`](./docs/DOCUMENTACION.md).  
+Evidencia de validación contra el toolchain: [`VALIDACION.md`](./docs/VALIDACION.md).
